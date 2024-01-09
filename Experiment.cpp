@@ -10,7 +10,7 @@
 #define ENTITY_LIST_SIZE 10
 using namespace std;
 
-int selfX, selfY, cmdX, cmdY, friendyMap[MAP_Y][MAP_X], enemyMap[MAP_Y][MAP_X], itemMap[MAP_Y][MAP_X], tick = 0, shootTick = 10, skillCD1 = 10, score = 0, strengthTick = 0, sunX = 120, sunY = 5;
+int selfX, selfY, cmdX, cmdY, friendyMap[MAP_Y][MAP_X], enemyMap[MAP_Y][MAP_X], itemMap[MAP_Y][MAP_X], tick, shootTick, skillCD1, score, strengthTick, sunX, sunY;
 bool endGame = false, canExecute = true, inAnimation = false, disableEnemyEvent_All = false;
 
 enum type {
@@ -596,27 +596,51 @@ void enemyEvent() {
 	}
 }
 
-void setDefaultData() {
-	disableEnemyEvent_All = true;
+void renderAll() {
+	renderGround(0, cmdY, ground, 1, (int)strlen(ground[0]), tick / 4, cmdX);
+	if ((tick / 10) % 2) {
+		render(sunX, sunY, sun1, 6, (int)strlen(sun1[0]), 0);
+	}
+	else {
+		render(sunX, sunY, sun2, 6, (int)strlen(sun2[0]), 0);
+	}
+	renderMountain(cmdX + 1 - ((tick / 4) % (cmdX + 18 + 1)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
+	renderMountain(cmdX + 11 - ((tick / 4) % (cmdX + 18 + 11)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
+	renderMountain(cmdX + 70 - ((tick / 4) % (cmdX + 18 + 70)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
+	render(selfX, selfY, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
+	render(entities[0].x, entities[0].y, plane1, 5, (int)strlen(plane1[0]), ENEMY_PLANE);
 }
 
-int main() {
-	cout << "请将窗口最大化后按任意键开始游戏..." << endl;
-	_getch();
-	setDefaultData();
+void setDefaultSettings() {
+	disableEnemyEvent_All = false;
+
 	getCmdXY();
 	setRandomSeed();
 	hideCursor();
 	ScreenBuff();
 	bufferOn();
 	clearScreen();
-	system("cls");
-	enterAnime();
+
+	tick = 0;
+	shootTick = 0;
+	skillCD1 = 10;
+	score = 0;
+	strengthTick = 0;
+	sunX = 120;
+	sunY = 5;
 	entities[0].x = 100;
 	entities[0].y = 6;
 	entities[0].type = ENEMY_PLANE;
 	entities[0].health = 8;
 	entities[0].maxHealth = 8;
+}
+
+int main() {
+	cout << "请将窗口最大化后按任意键开始游戏..." << endl;
+	_getch();
+	setDefaultSettings();
+	system("cls");
+	enterAnime();
 	while (!endGame) {
 		++tick;
 		gameInfo();
@@ -624,18 +648,7 @@ int main() {
 		checkExecute();
 		checkBullet();
 		enemyEvent();
-		renderGround(0, cmdY, ground, 1, (int)strlen(ground[0]), tick / 4, cmdX);
-		if ((tick / 10) % 2) {
-			render(sunX, sunY, sun1, 6, (int)strlen(sun1[0]), 0);
-		}
-		else {
-			render(sunX, sunY, sun2, 6, (int)strlen(sun2[0]), 0);
-		}
-		renderMountain(cmdX + 1 - ((tick / 4) % (cmdX + 18 + 1)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
-		renderMountain(cmdX + 11 - ((tick / 4) % (cmdX + 18 + 11)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
-		renderMountain(cmdX + 70 - ((tick / 4) % (cmdX + 18 + 70)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
-		render(selfX, selfY, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
-		render(entities[0].x, entities[0].y, plane1, 5, (int)strlen(plane1[0]), ENEMY_PLANE);
+		renderAll();
 		updateScreen();
 		checkCrush();
 		Sleep(16);
