@@ -4,21 +4,22 @@
 #include <thread>
 #define IMG_LENGTH 400
 #define MAP_X 179
-#define MAP_Y 30
+#define MAP_Y 29
 #define DATALEN 10000
 #define BULLET_LIST_SIZE 1000
 #define ENTITY_LIST_SIZE 10
 using namespace std;
 
-int selfX, selfY, cmdX, cmdY, friendyMap[MAP_Y][MAP_X], enemyMap[MAP_Y][MAP_X], itemMap[MAP_Y][MAP_X], tick, shootTick, skillCD1, score, strengthTick, sunX, sunY;
-bool endGame = false, canExecute = true, inAnimation = false, disableEnemyEvent_All = false;
+int planeX, planeY, cmdX, cmdY, friendyMap[MAP_Y][MAP_X], enemyMap[MAP_Y][MAP_X], itemMap[MAP_Y][MAP_X], tick, shootTick, skillCD1, score, strengthTick, laserTick, sunX, sunY;
+bool endGame = false, canExecute = true, inAnimation = false, disableEnemyEvent_All = false, isPlaneDead = false;
 
 enum type {
 	FRIENDY_PLANE = 100,
 	ENEMY_PLANE = 200,
 	FRIENDY_BULLET = 1000,
 	ENEMY_BULLET = 2000,
-	ITEM_STRENGTH = 3000
+	ITEM_STRENGTH = 3000,
+	ITEM_LASER = 3001
 };
 
 struct bullet {
@@ -30,7 +31,7 @@ struct entity {
 };
 entity entities[ENTITY_LIST_SIZE];
 
-//颜色: a.BLUE b.GREEN c.RED f.强制渲染该字符 大写代表附加亮度
+//颜色: A淡蓝色 a深蓝色 B绿色 b深绿色 C亮红色 c深红色 D天蓝色 d蓝色 E金色 e棕色 F粉色 f紫色        k强制渲染该字符
 char planeO[5][IMG_LENGTH] = {
 	"  \\    --b----",
 	"  =\\-  --ABC--",
@@ -50,14 +51,23 @@ char boom[3][IMG_LENGTH] = {
 	"< BOOM >cCCCCCCc",
 	"  vvvv  cccccccc"
 };
+char colorTest[1][IMG_LENGTH] = {
+	"AaBbCcDdEeFfAaBbCcDdEeFf",
+};
 char bulletO_1[1][IMG_LENGTH] = {
 	"->aA",
+};
+char bulletLaser[1][IMG_LENGTH] = {
+	"---------------DDDDDDDDDDDDDDD",
 };
 char bulletE_1[1][IMG_LENGTH] = {
 	"<-Cc",
 };
 char itemStrength[1][IMG_LENGTH] = {
 	"STBB",
+};
+char itemLaser[1][IMG_LENGTH] = {
+	"LAAA",
 };
 char ground[1][IMG_LENGTH] = {
 	"~~```~`~``~``#````~`~~~`~~`~~`~~`~~~~~`#`~`~`````~~~~``#`~`~```````#`~`~``````~`~~~`~~`#`#`~`~`````~~~~``#`~`~```````#`~`~``````~`~~~`~~`###~``````~`~``````~`~~~`~#~~~``#`~`~``````#~~``~```~``````~`~~~`~~#`~~`~~#~"
@@ -71,12 +81,12 @@ char sun1[6][IMG_LENGTH] = {
 	"   /     \\   ccccccccccccc",
 };
 char sun2[6][IMG_LENGTH] = {
-	"   \\_____/    CC-CCCCC-CCCC",
+	"   \\_____/    CCECCCCCECCCC",
 	"   /     \\   CCCCCCCCCCCCC",
-	"__/       \\__--CCCCCCCCC--",
+	"__/       \\__EECCCCCCCCCEE",
 	"  \\       /   CCCCCCCCCCCCC",
 	"   \\_____/    CCCCCCCCCCCCC",
-	"   /     \\   CCC-CCCCC-CCC",
+	"   /     \\   CCCECCCCCECCC",
 };
 char mountain[9][IMG_LENGTH] = {
 	"        /\\        ",
@@ -112,6 +122,14 @@ void bufferOn();
 void bufferOff();
 void updateScreen();
 void clearScreen();
+void renderAll();
+void setDefaultSettings();
+void resetAllMap();
+void enemyReborn();
+void characterPlaneReborn();
+void skill_1();
+void renderGround(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second, int startPos, int renderLength);
+void renderMountain(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second);
 
 HANDLE hOutput;
 HANDLE hOutBuf;
@@ -181,7 +199,7 @@ void getCmdXY() {
 	CONSOLE_SCREEN_BUFFER_INFO bInfo;
 	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &bInfo);
 	cmdX = bInfo.dwSize.X;
-	cmdY = bInfo.dwSize.Y;
+	//cmdY = bInfo.dwSize.Y;
 	cmdY = MAP_Y;
 }
 
@@ -211,16 +229,60 @@ int random(int min, int max) {//生成[min,max]的随机数
 }
 
 void enterAnime() {//进入入场动画
+	canExecute = false;
+	inAnimation = true;
 	memset(friendyMap, 0, sizeof(friendyMap));
 	memset(enemyMap, 0, sizeof(enemyMap));
-	selfX = 0;
-	selfY = 3;
+	planeX = 0;
+	planeY = 3;
 	for (int i = -(int)strlen(planeO[0]); i <= 3; ++i) {
-		render(selfX + i, selfY, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
-		updateScreen();
+		planeX = i;
 		Sleep(50);
 	}
-	selfX = 3;
+	canExecute = true;
+	inAnimation = false;
+}
+
+void setConsoleColor(char color) {
+	if (color == 'A') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE | FOREGROUND_INTENSITY);
+	}
+	else if (color == 'B') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+	}
+	else if (color == 'C') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_INTENSITY);
+	}
+	else if (color == 'D') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+	}
+	else if (color == 'E') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+	}
+	else if (color == 'F') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE | FOREGROUND_RED | FOREGROUND_INTENSITY);
+	}
+	else if (color == 'a') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE);
+	}
+	else if (color == 'b') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_GREEN);
+	}
+	else if (color == 'c') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_RED);
+	}
+	else if (color == 'd') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE | FOREGROUND_GREEN);
+	}
+	else if (color == 'e') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_GREEN);
+	}
+	else if (color == 'f') {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE | FOREGROUND_RED);
+	}
+	else {
+		SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+	}
 }
 
 //应该修改对碰撞箱的渲染，为类型附加下标，以便检测碰撞时确定是哪个实体
@@ -241,27 +303,10 @@ void render(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second,
 	}
 	for (int i = 0; i < first; ++i) {
 		for (int j = l; j < r; ++j) {
-			if (img[i][j] != ' ' || img[i][j + colorStart] == 'f') {
+			if (img[i][j] != ' ' || img[i][j + colorStart] == 'k') {
 				gotoXY(((baseX + j > 0) ? (baseX + j) : 0), baseY + i, hOutput);
 				if (img[i][j + colorStart] != '-') {
-					if (img[i][j + colorStart] == 'A') {
-						SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE | FOREGROUND_INTENSITY);
-					}
-					else if (img[i][j + colorStart] == 'B') {
-						SetConsoleTextAttribute(hOutput, FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-					}
-					else if (img[i][j + colorStart] == 'C') {
-						SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_INTENSITY);
-					}
-					else if (img[i][j + colorStart] == 'a') {
-						SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE);
-					}
-					else if (img[i][j + colorStart] == 'b') {
-						SetConsoleTextAttribute(hOutput, FOREGROUND_GREEN);
-					}
-					else if (img[i][j + colorStart] == 'c') {
-						SetConsoleTextAttribute(hOutput, FOREGROUND_RED);
-					}
+					setConsoleColor(img[i][j + colorStart]);
 				}
 				cout << img[i][j];
 				SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
@@ -293,6 +338,9 @@ void render(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second,
 				enemyMap[i][j] = type;
 			}
 			else if (type == ITEM_STRENGTH) {
+				itemMap[i][j] = type;
+			}
+			else if (type == ITEM_LASER) {
 				itemMap[i][j] = type;
 			}
 		}
@@ -348,30 +396,39 @@ void renderMountain(int baseX, int baseY, char img[][IMG_LENGTH], int first, int
 	}
 }
 
+void characterPlaneReborn() {
+	isPlaneDead = true;
+	canExecute = false;
+	Sleep(1000);
+	isPlaneDead = false;
+	thread t1(enterAnime);
+	t1.detach();
+	canExecute = true;
+}
+
+void enemyReborn() {
+	entities[0].health = 0;
+	Sleep(1000);
+	entities[0].x = 100;
+	entities[0].y = 6;
+	entities[0].health = 8;
+}
+
 int checkCrush() {//0:无碰撞 1:友军敌军碰撞 2:友军被击中 3:敌军被击中
 	for (int i = 0; i < MAP_Y; ++i) {
 		for (int j = 0; j < MAP_X; ++j) {
 			if (friendyMap[i][j] == FRIENDY_PLANE && enemyMap[i][j] == ENEMY_PLANE) {
-				render(j, i + 1, boom, 3, (int)strlen(boom[0]), 0);
-				entities[0].x = 100;
-				entities[0].y = 6;
-				entities[0].health = 8;
-				updateScreen();
+				thread T1(enemyReborn);
+				thread T2(characterPlaneReborn);
+				T1.detach();
+				T2.detach();
 				clearBullet();
-				Sleep(700);
-				enterAnime();
 				return 1;
 			}
 			else if (friendyMap[i][j] == FRIENDY_PLANE && enemyMap[i][j] == ENEMY_BULLET) {
-				render(j, i + 1, boom, 3, (int)strlen(boom[0]), 0);
-				render(entities[0].x, entities[0].y, plane1, 5, (int)strlen(plane1[0]), ENEMY_PLANE);
-				entities[0].x = 100;
-				entities[0].y = 6;
-				entities[0].health = 8;
-				updateScreen();
+				thread T1(characterPlaneReborn);
+				T1.detach();
 				clearBullet();
-				Sleep(700);
-				enterAnime();
 				return 2;
 			}
 			else if (friendyMap[i][j] == FRIENDY_BULLET && enemyMap[i][j] == ENEMY_PLANE) {
@@ -379,20 +436,24 @@ int checkCrush() {//0:无碰撞 1:友军敌军碰撞 2:友军被击中 3:敌军�
 				killBullet(j - 1, i);
 				if (entities[0].health <= 0) {
 					++score;
-					render(j, i + 1, boom, 3, (int)strlen(boom[0]), 0);
-					render(selfX, selfY, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
-					entities[0].x = 100;
-					entities[0].y = 6;
-					entities[0].health = 8;
-					updateScreen();
 					clearBullet();
-					Sleep(300);
-					bulletGenerator(j, i + 1, ITEM_STRENGTH, 1);
+					thread T1(enemyReborn);
+					T1.detach();
+					if (rand() % 4 == 0) {
+						bulletGenerator(j + 3, i + 3, ITEM_LASER, 1);
+					}
+					else {
+						bulletGenerator(j + 3, i + 3, ITEM_STRENGTH, 1);
+					}
 					return 3;
 				}
 			}
 			else if (friendyMap[i][j] == FRIENDY_PLANE && itemMap[i][j] == ITEM_STRENGTH) {
-				strengthTick += 10;
+				strengthTick += 5;
+				killBullet(j, i);
+			}
+			else if (friendyMap[i][j] == FRIENDY_PLANE && itemMap[i][j] == ITEM_LASER) {
+				laserTick += 100;
 				killBullet(j, i);
 			}
 		}
@@ -406,8 +467,8 @@ void bulletGenerator(int x, int y, int type, int direction) {//子弹生成器
 	}
 	for (int i = 0; i < BULLET_LIST_SIZE; ++i) {
 		if (bullets[i].type == 0) {
-			bullets[i].x = x + 3;
-			bullets[i].y = y + 2;
+			bullets[i].x = x;
+			bullets[i].y = y;
 			bullets[i].type = type;
 			bullets[i].direction = direction;
 			return;
@@ -417,7 +478,7 @@ void bulletGenerator(int x, int y, int type, int direction) {//子弹生成器
 
 void skill_1() {
 	if (skillCD1 < tick) {
-		int tempX = selfX, tempY = selfY;
+		int tempX = planeX + 3, tempY = planeY + 2;
 		skillCD1 = tick + 300;
 		for (int i = -2; i <= 2; ++i) {
 			bulletGenerator(tempX, tempY + abs(2 + i), FRIENDY_BULLET, 1);
@@ -436,27 +497,30 @@ void skill_1() {
 }
 
 void checkExecute() {//检查是否有输入
+	if (!canExecute || inAnimation) {
+		return;
+	}
 	if (_kbhit()) {
-		if (GetAsyncKeyState('W') && selfY > 0 && tick % 2 == 0) {
-			selfY -= 1;
+		if (GetAsyncKeyState('W') && planeY > 0 && tick % 2 == 0) {
+			planeY -= 1;
 		}
-		if (GetAsyncKeyState('S') && selfY + 5 < MAP_Y && tick % 2 == 0) {
-			selfY += 1;
+		if (GetAsyncKeyState('S') && planeY + 5 < MAP_Y && tick % 2 == 0) {
+			planeY += 1;
 		}
 		if (GetAsyncKeyState('A') && tick % 2 == 0) {
-			selfX -= 2;
+			planeX -= 2;
 		}
 		if (GetAsyncKeyState('D') && tick % 2 == 0) {
-			selfX += 2;
+			planeX += 2;
 		}
 		if (GetAsyncKeyState(' ') && tick % 2 == 0) {
 			if (tick % 4 == 0) {
-				bulletGenerator(selfX, selfY, FRIENDY_BULLET, 1);
+				bulletGenerator(planeX + 3, planeY + 2, FRIENDY_BULLET, 1);
 			}
-			if (strengthTick > 0 && tick % 2 == 0) {
+			if (strengthTick > 0 && tick % 8 == 0) {
 				--strengthTick;
-				bulletGenerator(selfX - 1, selfY - 1, FRIENDY_BULLET, 1);
-				bulletGenerator(selfX - 1, selfY + 1, FRIENDY_BULLET, 1);
+				bulletGenerator(planeX + 3 - 1, planeY + 2 - 1, FRIENDY_BULLET, 1);
+				bulletGenerator(planeX + 3 - 1, planeY + 2 + 1, FRIENDY_BULLET, 1);
 			}
 		}
 		if (GetAsyncKeyState('J')) {
@@ -494,6 +558,16 @@ void checkBullet() {//检查子弹
 			}
 			render(bullets[i].x, bullets[i].y, itemStrength, 1, (int)strlen(itemStrength[0]), ITEM_STRENGTH);
 		}
+		else if (bullets[i].type == ITEM_LASER) {
+			if (tick % 40 == 0) {
+				bullets[i].y += 1 * bullets[i].direction;
+			}
+			if (bullets[i].y >= MAP_Y || bullets[i].y < 0) {
+				bullets[i].type = 0;
+				continue;
+			}
+			render(bullets[i].x, bullets[i].y, itemLaser, 1, (int)strlen(itemLaser[0]), ITEM_LASER);
+		}
 	}
 }
 
@@ -510,7 +584,7 @@ void killBullet(int x, int y) {
 
 void clearBullet() {
 	for (int i = 0; i < BULLET_LIST_SIZE; ++i) {
-		if (bullets[i].type == ITEM_STRENGTH) {
+		if (bullets[i].type == ITEM_STRENGTH || bullets[i].type == ITEM_LASER) {
 
 		}
 		else {
@@ -532,8 +606,8 @@ int getBullet(int type) {
 
 void gameInfo() {
 	gotoXY(0, 0, hOutput);
-	cout << "WASD:移动 Space:攻击 J:技能[" << ((skillCD1 < tick) ? ("√") : (to_string((skillCD1 - tick) / 16))) << "]" << endl;
-	cout << "强化: " << ((strengthTick > 0) ? ("√") : ("暂无")) << endl;
+	cout << "WASD:移动 Space:射击 J:技能[" << ((skillCD1 < tick) ? ("√") : (to_string((skillCD1 - tick) / 16))) << "]" << endl;
+	cout << "强化: " << ((strengthTick > 0) ? (to_string(strengthTick)) : ("无")) <<" 镭射: " << ((laserTick > 0) ? (to_string(laserTick)) : ("无")) << endl;
 	cout << "Score: " << score << endl;
 }
 
@@ -547,8 +621,11 @@ void enemyEvent() {
 	if (disableEnemyEvent_All) {
 		return;
 	}
+	if (entities[0].health <= 0) {
+		return;
+	}
 	if (tick == shootTick) {
-		bulletGenerator(entities[0].x, entities[0].y, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3, entities[0].y + 2, ENEMY_BULLET, -1);
 		shootTick += random(75, 110);
 	}
 	if (entities[0].x < 2) {
@@ -567,9 +644,6 @@ void enemyEvent() {
 				entities[0].y += 1;
 			}
 		}
-		else {
-			//entities[0].y += random(-1, 1);
-		}
 		if (entities[0].x < 0) {
 			entities[0].x = 0;
 		}if (entities[0].x > MAP_X) {
@@ -581,18 +655,18 @@ void enemyEvent() {
 		}
 	}
 	if (tick % 160 == 0) {
-		bulletGenerator(entities[0].x, entities[0].y - 1, ENEMY_BULLET, -1);
-		bulletGenerator(entities[0].x, entities[0].y, ENEMY_BULLET, -1);
-		bulletGenerator(entities[0].x, entities[0].y + 1, ENEMY_BULLET, -1);
-		bulletGenerator(entities[0].x - 1, entities[0].y, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3, entities[0].y + 2 - 1, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3, entities[0].y + 2, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3, entities[0].y + 2 + 1, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3 - 1, entities[0].y + 2, ENEMY_BULLET, -1);
 	}
 	if (tick % 320 == 0) {
-		bulletGenerator(entities[0].x - 1, entities[0].y, ENEMY_BULLET, -1);
-		bulletGenerator(entities[0].x, entities[0].y - 1, ENEMY_BULLET, -1);
-		bulletGenerator(entities[0].x, entities[0].y, ENEMY_BULLET, -1);
-		bulletGenerator(entities[0].x, entities[0].y + 1, ENEMY_BULLET, -1);
-		bulletGenerator(entities[0].x + 1, entities[0].y - 2, ENEMY_BULLET, -1);
-		bulletGenerator(entities[0].x + 1, entities[0].y + 2, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3 - 1, entities[0].y + 2, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3, entities[0].y + 2 - 1, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3, entities[0].y + 2, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3, entities[0].y + 2 + 1, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3 + 1, entities[0].y + 2 - 2, ENEMY_BULLET, -1);
+		bulletGenerator(entities[0].x + 3 + 1, entities[0].y + 2 + 2, ENEMY_BULLET, -1);
 	}
 }
 
@@ -607,8 +681,24 @@ void renderAll() {
 	renderMountain(cmdX + 1 - ((tick / 4) % (cmdX + 18 + 1)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
 	renderMountain(cmdX + 11 - ((tick / 4) % (cmdX + 18 + 11)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
 	renderMountain(cmdX + 70 - ((tick / 4) % (cmdX + 18 + 70)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
-	render(selfX, selfY, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
-	render(entities[0].x, entities[0].y, plane1, 5, (int)strlen(plane1[0]), ENEMY_PLANE);
+	if (isPlaneDead) {
+		render(planeX + 1, planeY + 2, boom, 3, (int)strlen(boom[0]), 0);
+	}
+	else {
+		render(planeX, planeY, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
+	}
+	if (entities[0].health > 0) {
+		render(entities[0].x, entities[0].y, plane1, 5, (int)strlen(plane1[0]), ENEMY_PLANE);
+	}
+	else {
+		render(entities[0].x + 1, entities[0].y + 2, boom, 3, (int)strlen(boom[0]), 0);
+	}
+	if (laserTick > 0 && !isPlaneDead) {
+		render(planeX + 6, planeY + 1, bulletLaser, 1, (int)strlen(bulletLaser[0]), FRIENDY_BULLET);
+		render(planeX + 7, planeY + 3, bulletLaser, 1, (int)strlen(bulletLaser[0]), FRIENDY_BULLET);
+		--laserTick;
+	}
+	//render(0, 8, colorTest, 1, (int)strlen(colorTest[0]), 0);
 }
 
 void setDefaultSettings() {
@@ -626,6 +716,7 @@ void setDefaultSettings() {
 	skillCD1 = 10;
 	score = 0;
 	strengthTick = 0;
+	laserTick = 0;
 	sunX = 120;
 	sunY = 5;
 	entities[0].x = 100;
@@ -635,12 +726,14 @@ void setDefaultSettings() {
 	entities[0].maxHealth = 8;
 }
 
+//下一步增加功能：使用多线程实现一个消息队列，选一个地方显示消息，用于显示击杀提示等   参数包含显示时间，显示位置，显示内容
 int main() {
 	cout << "请将窗口最大化后按任意键开始游戏..." << endl;
 	_getch();
 	setDefaultSettings();
 	system("cls");
-	enterAnime();
+	thread T1(enterAnime);
+	T1.detach();
 	while (!endGame) {
 		++tick;
 		gameInfo();
