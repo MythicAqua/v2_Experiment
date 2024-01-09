@@ -2,23 +2,25 @@
 #include <windows.h>
 #include <conio.h>
 #include <thread>
-#define IMG_LENGTH 100
-#define MAP_X 121
-#define MAP_Y 23
+#define IMG_LENGTH 400
+#define MAP_X 179
+#define MAP_Y 30
 #define DATALEN 10000
 #define BULLET_LIST_SIZE 1000
+#define ENTITY_LIST_SIZE 10
 using namespace std;
 
-int xx1, yy1, cmdx, cmdy, friendyMap[MAP_Y][MAP_X], enemyMap[MAP_Y][MAP_X], itemMap[MAP_Y][MAP_X], tick = 0, shootTick = 10, skillCD1 = 10, score = 0, strengthTick = 0;
-bool endGame = false, canExecute = true, inAnimation = false;
+int selfX, selfY, cmdX, cmdY, friendyMap[MAP_Y][MAP_X], enemyMap[MAP_Y][MAP_X], itemMap[MAP_Y][MAP_X], tick = 0, shootTick = 10, skillCD1 = 10, score = 0, strengthTick = 0, sunX = 120, sunY = 5;
+bool endGame = false, canExecute = true, inAnimation = false, disableEnemyEvent_All = false;
 
 enum type {
-	FRIENDY_PLANE = 101,
-	FRIENDY_BULLET = 102,
-	ENEMY_PLANE = 501,
-	ENEMY_BULLET = 502,
-	ITEM_STRENGTH = 1001
+	FRIENDY_PLANE = 100,
+	ENEMY_PLANE = 200,
+	FRIENDY_BULLET = 1000,
+	ENEMY_BULLET = 2000,
+	ITEM_STRENGTH = 3000
 };
+
 struct bullet {
 	int x, y, type, direction;
 };
@@ -26,9 +28,9 @@ bullet bullets[BULLET_LIST_SIZE];
 struct entity {
 	int x, y, type, health, maxHealth;
 };
-entity entities[10];
+entity entities[ENTITY_LIST_SIZE];
 
-//颜色: a.BLUE b.GREEN c.RED 大写代表附加亮度
+//颜色: a.BLUE b.GREEN c.RED f.强制渲染该字符 大写代表附加亮度
 char planeO[5][IMG_LENGTH] = {
 	"  \\    --b----",
 	"  =\\-  --ABC--",
@@ -56,6 +58,36 @@ char bulletE_1[1][IMG_LENGTH] = {
 };
 char itemStrength[1][IMG_LENGTH] = {
 	"STBB",
+};
+char ground[1][IMG_LENGTH] = {
+	"~~```~`~``~``#````~`~~~`~~`~~`~~`~~~~~`#`~`~`````~~~~``#`~`~```````#`~`~``````~`~~~`~~`#`#`~`~`````~~~~``#`~`~```````#`~`~``````~`~~~`~~`###~``````~`~``````~`~~~`~#~~~``#`~`~``````#~~``~```~``````~`~~~`~~#`~~`~~#~"
+};
+char sun1[6][IMG_LENGTH] = {
+	"   \\_____/    ccccccccccccc",
+	"   /     \\   ccccccccccccc",
+	"__/       \\__ccccccccccccc",
+	"  \\       /   ccccccccccccc",
+	"   \\_____/    ccccccccccccc",
+	"   /     \\   ccccccccccccc",
+};
+char sun2[6][IMG_LENGTH] = {
+	"   \\_____/    CC-CCCCC-CCCC",
+	"   /     \\   CCCCCCCCCCCCC",
+	"__/       \\__--CCCCCCCCC--",
+	"  \\       /   CCCCCCCCCCCCC",
+	"   \\_____/    CCCCCCCCCCCCC",
+	"   /     \\   CCC-CCCCC-CCC",
+};
+char mountain[9][IMG_LENGTH] = {
+	"        /\\        ",
+	"       /  \\       ",
+	"      /    \\      ",
+	"     /      \\     ",
+	"    /        \\    ",
+	"   /          \\   ",
+	"  /            \\  ",
+	" /              \\ ",
+	"/                \\",
 };
 
 void enterAnime();
@@ -148,9 +180,9 @@ void gotoXY(short x, short y, HANDLE h) {
 void getCmdXY() {
 	CONSOLE_SCREEN_BUFFER_INFO bInfo;
 	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &bInfo);
-	cmdx = bInfo.dwSize.X;
-	cmdy = bInfo.dwSize.Y;
-	cmdy = MAP_Y;
+	cmdX = bInfo.dwSize.X;
+	cmdY = bInfo.dwSize.Y;
+	cmdY = MAP_Y;
 }
 
 void printMap() {//调试用
@@ -181,24 +213,25 @@ int random(int min, int max) {//生成[min,max]的随机数
 void enterAnime() {//进入入场动画
 	memset(friendyMap, 0, sizeof(friendyMap));
 	memset(enemyMap, 0, sizeof(enemyMap));
-	xx1 = 0;
-	yy1 = 3;
+	selfX = 0;
+	selfY = 3;
 	for (int i = -(int)strlen(planeO[0]); i <= 3; ++i) {
-		render(xx1 + i, yy1, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
+		render(selfX + i, selfY, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
 		updateScreen();
 		Sleep(50);
 	}
-	xx1 = 3;
+	selfX = 3;
 }
 
-void render(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second, int type) {//渲染的x,y坐标，图片，图片的第一维，图片的第二维，图片的类型
-	if (baseX >= cmdx || baseY < 0) {//超出屏幕范围
+//应该修改对碰撞箱的渲染，为类型附加下标，以便检测碰撞时确定是哪个实体
+void render(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second, int type) {//渲染的x,y坐标，渲染目标，目标的第一维，目标的第二维，目标的类型
+	if (baseX >= cmdX || baseY < 0) {//超出屏幕范围
 		return;
 	}
 	second /= 2;
 	int l = 0, r = second, colorStart = second;
-	if (baseX + r > cmdx) {
-		r = cmdx - baseX;
+	if (baseX + r > cmdX) {
+		r = cmdX - baseX;
 	}
 	if (baseX < 0) {
 		l = -baseX;
@@ -207,31 +240,36 @@ void render(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second,
 		}
 	}
 	for (int i = 0; i < first; ++i) {
-		gotoXY(((baseX > 0) ? baseX : 0), baseY + i, hOutput);
 		for (int j = l; j < r; ++j) {
-			if (img[i][j + colorStart] != '-') {
-				if (img[i][j + colorStart] == 'A') {
-					SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE | FOREGROUND_INTENSITY);
+			if (img[i][j] != ' ' || img[i][j + colorStart] == 'f') {
+				gotoXY(((baseX + j > 0) ? (baseX + j) : 0), baseY + i, hOutput);
+				if (img[i][j + colorStart] != '-') {
+					if (img[i][j + colorStart] == 'A') {
+						SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE | FOREGROUND_INTENSITY);
+					}
+					else if (img[i][j + colorStart] == 'B') {
+						SetConsoleTextAttribute(hOutput, FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+					}
+					else if (img[i][j + colorStart] == 'C') {
+						SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_INTENSITY);
+					}
+					else if (img[i][j + colorStart] == 'a') {
+						SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE);
+					}
+					else if (img[i][j + colorStart] == 'b') {
+						SetConsoleTextAttribute(hOutput, FOREGROUND_GREEN);
+					}
+					else if (img[i][j + colorStart] == 'c') {
+						SetConsoleTextAttribute(hOutput, FOREGROUND_RED);
+					}
 				}
-				else if (img[i][j + colorStart] == 'B') {
-					SetConsoleTextAttribute(hOutput, FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-				}
-				else if (img[i][j + colorStart] == 'C') {
-					SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_INTENSITY);
-				}
-				else if (img[i][j + colorStart] == 'a') {
-					SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE);
-				}
-				else if (img[i][j + colorStart] == 'b') {
-					SetConsoleTextAttribute(hOutput, FOREGROUND_GREEN);
-				}
-				else if (img[i][j + colorStart] == 'c') {
-					SetConsoleTextAttribute(hOutput, FOREGROUND_RED);
-				}
+				cout << img[i][j];
+				SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 			}
-			cout << img[i][j];
-			SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 		}
+	}
+	if (type == 0) {
+		return;
 	}
 	if (type == ENEMY_PLANE) {
 		gotoXY(((baseX > 0) ? baseX : 0), baseY + first, hOutput);
@@ -256,6 +294,55 @@ void render(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second,
 			}
 			else if (type == ITEM_STRENGTH) {
 				itemMap[i][j] = type;
+			}
+		}
+	}
+}
+
+void renderGround(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second, int startPos, int renderLength) {
+	if (baseX >= cmdX || baseY < 0) {//超出屏幕范围
+		return;
+	}
+	if (baseX + renderLength > cmdX) {
+		renderLength = cmdX - baseX;
+	}
+	for (int i = 0; i < first; ++i) {
+		for (int j = 0; j < renderLength; ++j) {
+			gotoXY(((baseX + j > 0) ? (baseX + j) : 0), baseY + i, hOutput);
+			cout << img[i][(j + startPos) % renderLength];
+		}
+	}
+}
+
+void renderMountain(int baseX, int baseY, char img[][IMG_LENGTH], int first, int second) {
+	if (baseX >= cmdX || baseY < 0) {//超出屏幕范围
+		return;
+	}
+	int l = 0, r = second;
+	if (baseX + r > cmdX) {
+		r = cmdX - baseX;
+	}
+	if (baseX < 0) {
+		l = -baseX;
+		if (l > second) {
+			return;
+		}
+	}
+	for (int i = 0; i < first; ++i) {
+		for (int j = l; j < r; ++j) {
+			if (img[i][j] != ' ') {
+				gotoXY(((baseX + j > 0) ? (baseX + j) : 0), baseY + i, hOutput);
+				if (img[i][j] == '/' && i<first - 2 && baseX + j > sunX + 6) {
+					SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+				}
+				else if (img[i][j] == '\\' && i < first - 2 && baseX + j < sunX + 6) {
+					SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+				}
+				else {
+					SetConsoleTextAttribute(hOutput, FOREGROUND_BLUE);
+				}
+				cout << img[i][j];
+				SetConsoleTextAttribute(hOutput, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 			}
 		}
 	}
@@ -293,7 +380,7 @@ int checkCrush() {//0:无碰撞 1:友军敌军碰撞 2:友军被击中 3:敌军�
 				if (entities[0].health <= 0) {
 					++score;
 					render(j, i + 1, boom, 3, (int)strlen(boom[0]), 0);
-					render(xx1, yy1, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
+					render(selfX, selfY, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
 					entities[0].x = 100;
 					entities[0].y = 6;
 					entities[0].health = 8;
@@ -330,11 +417,11 @@ void bulletGenerator(int x, int y, int type, int direction) {//子弹生成器
 
 void skill_1() {
 	if (skillCD1 < tick) {
-		int tempX = xx1, tempY = yy1;
+		int tempX = selfX, tempY = selfY;
 		skillCD1 = tick + 300;
 		for (int i = -2; i <= 2; ++i) {
-			bulletGenerator(tempX, tempY + abs(2+i), FRIENDY_BULLET, 1);
-			bulletGenerator(tempX, tempY - abs(2+i), FRIENDY_BULLET, 1);
+			bulletGenerator(tempX, tempY + abs(2 + i), FRIENDY_BULLET, 1);
+			bulletGenerator(tempX, tempY - abs(2 + i), FRIENDY_BULLET, 1);
 			Sleep(100);
 		}
 		bulletGenerator(tempX, tempY + 5, FRIENDY_BULLET, 1);
@@ -350,26 +437,26 @@ void skill_1() {
 
 void checkExecute() {//检查是否有输入
 	if (_kbhit()) {
-		if (GetAsyncKeyState('W') && yy1 > 0 && tick % 2 == 0) {
-			yy1 -= 1;
+		if (GetAsyncKeyState('W') && selfY > 0 && tick % 2 == 0) {
+			selfY -= 1;
 		}
-		if (GetAsyncKeyState('S') && yy1 + 5 < MAP_Y && tick % 2 == 0) {
-			yy1 += 1;
+		if (GetAsyncKeyState('S') && selfY + 5 < MAP_Y && tick % 2 == 0) {
+			selfY += 1;
 		}
 		if (GetAsyncKeyState('A') && tick % 2 == 0) {
-			xx1 -= 2;
+			selfX -= 2;
 		}
 		if (GetAsyncKeyState('D') && tick % 2 == 0) {
-			xx1 += 2;
+			selfX += 2;
 		}
 		if (GetAsyncKeyState(' ') && tick % 2 == 0) {
 			if (tick % 4 == 0) {
-				bulletGenerator(xx1, yy1, FRIENDY_BULLET, 1);
+				bulletGenerator(selfX, selfY, FRIENDY_BULLET, 1);
 			}
 			if (strengthTick > 0 && tick % 2 == 0) {
 				--strengthTick;
-				bulletGenerator(xx1 - 1, yy1 - 1, FRIENDY_BULLET, 1);
-				bulletGenerator(xx1 - 1, yy1 + 1, FRIENDY_BULLET, 1);
+				bulletGenerator(selfX - 1, selfY - 1, FRIENDY_BULLET, 1);
+				bulletGenerator(selfX - 1, selfY + 1, FRIENDY_BULLET, 1);
 			}
 		}
 		if (GetAsyncKeyState('J')) {
@@ -410,6 +497,7 @@ void checkBullet() {//检查子弹
 	}
 }
 
+//////////////////////////////////////找个时间重写一个
 void killBullet(int x, int y) {
 	for (int i = 0; i < BULLET_LIST_SIZE; ++i) {
 		if (bullets[i].x == x && bullets[i].y == y) {
@@ -418,6 +506,7 @@ void killBullet(int x, int y) {
 		}
 	}
 }
+//////////////////////////////////////找个时间重写一个
 
 void clearBullet() {
 	for (int i = 0; i < BULLET_LIST_SIZE; ++i) {
@@ -430,6 +519,7 @@ void clearBullet() {
 	}
 }
 
+//////////////////////////////////////找个时间重写一个
 int getBullet(int type) {
 	for (int i = 0; i < BULLET_LIST_SIZE; ++i) {
 		if (bullets[i].type == type) {
@@ -438,6 +528,7 @@ int getBullet(int type) {
 	}
 	return -1;
 }
+//////////////////////////////////////找个时间重写一个
 
 void gameInfo() {
 	gotoXY(0, 0, hOutput);
@@ -446,7 +537,16 @@ void gameInfo() {
 	cout << "Score: " << score << endl;
 }
 
+void resetAllMap() {
+	memset(friendyMap, 0, sizeof(friendyMap));
+	memset(enemyMap, 0, sizeof(enemyMap));
+	memset(itemMap, 0, sizeof(itemMap));
+}
+
 void enemyEvent() {
+	if (disableEnemyEvent_All) {
+		return;
+	}
 	if (tick == shootTick) {
 		bulletGenerator(entities[0].x, entities[0].y, ENEMY_BULLET, -1);
 		shootTick += random(75, 110);
@@ -476,8 +576,8 @@ void enemyEvent() {
 			entities[0].x = MAP_X;
 		}if (entities[0].y < 0) {
 			entities[0].y = 0;
-		}if (entities[0].y > cmdy - 5) {
-			entities[0].y = cmdy - 5;
+		}if (entities[0].y > cmdY - 5) {
+			entities[0].y = cmdY - 5;
 		}
 	}
 	if (tick % 160 == 0) {
@@ -488,17 +588,22 @@ void enemyEvent() {
 	}
 	if (tick % 320 == 0) {
 		bulletGenerator(entities[0].x - 1, entities[0].y, ENEMY_BULLET, -1);
-
 		bulletGenerator(entities[0].x, entities[0].y - 1, ENEMY_BULLET, -1);
 		bulletGenerator(entities[0].x, entities[0].y, ENEMY_BULLET, -1);
 		bulletGenerator(entities[0].x, entities[0].y + 1, ENEMY_BULLET, -1);
-
 		bulletGenerator(entities[0].x + 1, entities[0].y - 2, ENEMY_BULLET, -1);
 		bulletGenerator(entities[0].x + 1, entities[0].y + 2, ENEMY_BULLET, -1);
 	}
 }
 
+void setDefaultData() {
+	disableEnemyEvent_All = true;
+}
+
 int main() {
+	cout << "请将窗口最大化后按任意键开始游戏..." << endl;
+	_getch();
+	setDefaultData();
 	getCmdXY();
 	setRandomSeed();
 	hideCursor();
@@ -515,13 +620,21 @@ int main() {
 	while (!endGame) {
 		++tick;
 		gameInfo();
-		memset(friendyMap, 0, sizeof(friendyMap));
-		memset(enemyMap, 0, sizeof(enemyMap));
-		memset(itemMap, 0, sizeof(itemMap));
+		resetAllMap();
 		checkExecute();
 		checkBullet();
 		enemyEvent();
-		render(xx1, yy1, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
+		renderGround(0, cmdY, ground, 1, (int)strlen(ground[0]), tick / 4, cmdX);
+		if ((tick / 10) % 2) {
+			render(sunX, sunY, sun1, 6, (int)strlen(sun1[0]), 0);
+		}
+		else {
+			render(sunX, sunY, sun2, 6, (int)strlen(sun2[0]), 0);
+		}
+		renderMountain(cmdX + 1 - ((tick / 4) % (cmdX + 18 + 1)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
+		renderMountain(cmdX + 11 - ((tick / 4) % (cmdX + 18 + 11)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
+		renderMountain(cmdX + 70 - ((tick / 4) % (cmdX + 18 + 70)), cmdY - 9, mountain, 9, (int)strlen(mountain[0]));
+		render(selfX, selfY, planeO, 5, (int)strlen(planeO[0]), FRIENDY_PLANE);
 		render(entities[0].x, entities[0].y, plane1, 5, (int)strlen(plane1[0]), ENEMY_PLANE);
 		updateScreen();
 		checkCrush();
