@@ -10,7 +10,7 @@
 #define DATALEN 10000
 #define BULLET_LIST_SIZE 1000
 #define ENTITY_LIST_SIZE 10
-#define DMG_MULTIPLIER 50
+#define DMG_MULTIPLIER 30
 #define PLANE_LIFE 5
 using namespace std;
 
@@ -339,6 +339,32 @@ void printMap() {//调试用
 			cout << enemyMap[i][j];
 		}
 		cout << endl;
+	}
+}
+
+void printTitle(int x, int y) {
+	if (x == -1 || y == -1) {
+		cout << "   _____  _  _  _     __          __                    " << endl;
+		cout << "  / ____|(_)| || |    \\ \\        / /                     " << endl;
+		cout << " | (___   _ | || | __  \\ \\  /\\  / /___   _ __  _ __ ___  " << endl;
+		cout << "  \\___ \\ | || || |/ /   \\ \\/  \\/ // _ \\ | \'__|| \'_ ` _ \\ " << endl;
+		cout << "  ____) || || ||   <     \\  /\\  /| (_) || |   | | | | | |" << endl;
+		cout << " |_____/ |_||_||_|\\_\\     \\/  \\/  \\___/ |_|   |_| |_| |_|" << endl;
+	}
+	else {
+		gotoXY(x, y, hOutput);
+		cout << "   _____  _  _  _     __          __                    ";
+		gotoXY(x, y + 1, hOutput);
+		cout << "  / ____|(_)| || |    \\ \\        / /                     ";
+		gotoXY(x, y + 2, hOutput);
+		cout << " | (___   _ | || | __  \\ \\  /\\  / /___   _ __  _ __ ___  ";
+		gotoXY(x, y + 3, hOutput);
+		cout << "  \\___ \\ | || || |/ /   \\ \\/  \\/ // _ \\ | \'__|| \'_ ` _ \\ ";
+		gotoXY(x, y + 4, hOutput);
+		cout << "  ____) || || ||   <     \\  /\\  /| (_) || |   | | | | | |";
+		gotoXY(x, y + 5, hOutput);
+		cout << " |_____/ |_||_||_|\\_\\     \\/  \\/  \\___/ |_|   |_| |_| |_|";
+
 	}
 }
 
@@ -689,7 +715,12 @@ void characterPlaneReborn() {//角色飞机重生
 	thread t1(enterAnime);
 	t1.detach();
 	godTick = 70;
-	canExecute = true;
+	if (planeLife == 0) {
+
+	}
+	else {
+		canExecute = false;
+	}
 }
 
 void enemyReborn() {//敌机重生
@@ -813,20 +844,20 @@ void bulletGenerator(int x, int y, int type, int direction) {//子弹生成器
 }
 
 void checkExecute() {//检查是否有输入
-	if (!canExecute || inAnimation) {
+	if (!canExecute || inAnimation || planeLife == 0) {
 		return;
 	}
 	if (_kbhit()) {
-		if (GetAsyncKeyState('W') && planeY > 0 && tick % 2 == 0) {
+		if (GetAsyncKeyState('W') && planeY > 0) {
 			planeY -= 1;
 		}
-		if (GetAsyncKeyState('S') && planeY + 5 < MAP_Y && tick % 2 == 0) {
+		if (GetAsyncKeyState('S') && planeY + 5 < MAP_Y) {
 			planeY += 1;
 		}
-		if (GetAsyncKeyState('A') && tick % 2 == 0) {
+		if (GetAsyncKeyState('A')) {
 			planeX -= 2;
 		}
-		if (GetAsyncKeyState('D') && tick % 2 == 0) {
+		if (GetAsyncKeyState('D')) {
 			planeX += 2;
 		}
 		if (GetAsyncKeyState(' ') && tick % 2 == 0) {
@@ -1253,7 +1284,7 @@ void inBossFight() {//need 7600tick?
 		}
 		thread m3(printMessage, cmdX / 2, 17, "哼哼哼..余裕啊余裕", 100, 3);
 		thread m4(printMessage, cmdX / 2, 17, "你 弱 我 强", 200, 4);
-		thread m5(printMessage, cmdX / 2, 17, "回去再练44.5年吧！", 100, 5);
+		thread m5(printMessage, cmdX / 2, 17, "想击败我那是不可能的！", 100, 5);
 		m3.detach();
 		m4.detach();
 		m5.detach();
@@ -1304,10 +1335,6 @@ void printMessage(int x, int y, string msg, int sleepTime, int msgID) {
 	}
 	isPrintingMessage = true;
 	for (int i = 0; i < msg.size(); ++i) {
-		if (messageID == 3) {
-			canExecute = false;
-			inAnimation = true;
-		}
 		message = msg.substr(0, i + 1);
 		messageX = (x - message.size() / 2);
 		messageY = y;
@@ -1330,32 +1357,6 @@ void printMessage(int x, int y, string msg, int sleepTime, int msgID) {
 	}
 	isPrintingMessage = false;
 	++messageID;
-}
-
-void printTitle(int x, int y) {
-	if (x == -1 || y == -1) {
-		cout << "   _____  _  _  _     __          __                    " << endl;
-		cout << "  / ____|(_)| || |    \\ \\        / /                     " << endl;
-		cout << " | (___   _ | || | __  \\ \\  /\\  / /___   _ __  _ __ ___  " << endl;
-		cout << "  \\___ \\ | || || |/ /   \\ \\/  \\/ // _ \\ | \'__|| \'_ ` _ \\ " << endl;
-		cout << "  ____) || || ||   <     \\  /\\  /| (_) || |   | | | | | |" << endl;
-		cout << " |_____/ |_||_||_|\\_\\     \\/  \\/  \\___/ |_|   |_| |_| |_|" << endl;
-	}
-	else {
-		gotoXY(x, y, hOutput);
-		cout << "   _____  _  _  _     __          __                    ";
-		gotoXY(x, y + 1, hOutput);
-		cout << "  / ____|(_)| || |    \\ \\        / /                     ";
-		gotoXY(x, y + 2, hOutput);
-		cout << " | (___   _ | || | __  \\ \\  /\\  / /___   _ __  _ __ ___  ";
-		gotoXY(x, y + 3, hOutput);
-		cout << "  \\___ \\ | || || |/ /   \\ \\/  \\/ // _ \\ | \'__|| \'_ ` _ \\ ";
-		gotoXY(x, y + 4, hOutput);
-		cout << "  ____) || || ||   <     \\  /\\  /| (_) || |   | | | | | |";
-		gotoXY(x, y + 5, hOutput);
-		cout << " |_____/ |_||_||_|\\_\\     \\/  \\/  \\___/ |_|   |_| |_| |_|";
-
-	}
 }
 
 void printGameEnd() {
